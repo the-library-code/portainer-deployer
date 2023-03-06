@@ -7,9 +7,9 @@ from os import path, access, W_OK, R_OK
 import logging
 
 
-def format_secret(secret: dict):
+def format_resource(resource: dict):
     """
-    Return a simple tuple with secret and resource control ID, from the example response dict:
+    Return a simple tuple with resource and resource control ID, from the example response dict:
     {
     "ID": "z97bz5hrdk0ex7j44gcxzrvyj",
     "Portainer": {
@@ -31,13 +31,21 @@ def format_secret(secret: dict):
         }
     }
 }
-    :param secret:
-    :return:
+    :param resource: The resource to format
+    :return: formatted resource
     """
-    if len(secret) == 0:
+    if len(resource) == 0:
         return ()
-    secret_info = (secret['ID'], secret['Portainer']['ResourceControl']['Id'])
-    return secret_info
+    formatted_resource = dict()
+    if 'Portainer' in resource and 'ResourceControl' in resource['Portainer']:
+        if 'ID' in resource:
+            name = resource['ID']
+        elif 'Name' in resource:
+            name = resource['Name']
+        else:
+            raise Exception("Error formatting resource")
+        formatted_resource = (name, resource['Portainer']['ResourceControl']['Id'])
+    return formatted_resource
 
 
 def format_stack_info_generator(stacks: list):

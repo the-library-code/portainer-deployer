@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import logging
 from os import path
 from urllib3.exceptions import InsecureRequestWarning
 
@@ -390,7 +390,7 @@ class PortainerAPIConsumer:
             json=json
         )
         r.raise_for_status()
-        (resource_id, resource_control_id) = format_secret(r.json())
+        (resource_id, resource_control_id) = format_resource(r.json())
         # Only update resource control if a team name was specified and we got a good team ID back
         if team is not None and team_id is not None:
             rcr = self.update_resource_control(endpoint_id, resource_control_id, default_resource_control)
@@ -398,6 +398,68 @@ class PortainerAPIConsumer:
             r.raise_for_status()
         logging.getLogger('stdout').info("Created secret successfully")
         return generate_response('Created secret successfully', status=True, code=r.status_code)
+
+    @error_handler
+    def create_volume(self, endpoint_id: int, name: str,
+        team: str = None) -> dict:
+        """Create a volume for a given endpoint id and team
+
+        Args:
+            endpoint_id (int): Id of the endpoint in Portainer.
+            name (str): Name of the volume to create.
+            team (str): Team name to access, otherwise administrator
+        Returns:
+            dict: Dictionary with the status and detail of the operation.
+        """
+        if not endpoint_id:
+            raise Exception('Invalid endpoint ID', 'An endpoint ID (integer) is required')
+        if not name:
+            raise Exception('Invalid volume name', 'A new volume name is required.')
+
+        # Volume data
+        json = {
+            "Name": name,
+        }
+        # Resource control data
+        team_id = None
+        if team:
+            teams = self.get_teams()
+            for team_entry in teams:
+                logging.getLogger('stdout').info(team)
+                if team == team_entry['Name']:
+                    team_id = team_entry['Id']
+
+            # Some validation
+            if type(team_id) is not int:
+                logging.getLogger('stdout').error(f"Team {team} not found, exiting")
+                exit(1)
+
+        default_resource_control = {
+            "administratorsOnly": False,
+            "public": False,
+            "teams": [
+                team_id
+            ],
+            "users": []
+        }
+
+        # Takes stack_name only if stack_id is not provided
+        r = requests.post(
+            f"{self.__portainer_connection_str}/api/endpoints/{endpoint_id}/docker/volumes/create",
+            headers=self.__connection_headers,
+            verify=self.use_ssl,
+            json=json
+        )
+        logging.getLogger('stdout').info(r.json())
+        r.raise_for_status()
+        (resource_id, resource_control_id) = format_resource(r.json())
+        logging.getLogger('stdout').info(resource_id)
+        # Only update resource control if a team name was specified and we got a good team ID back
+        if team is not None and team_id is not None:
+            rcr = self.update_resource_control(endpoint_id, resource_control_id, default_resource_control)
+
+        logging.getLogger('stdout').info("Created volume successfully")
+        return generate_response('Created volume successfully', status=True, code=r.status_code)
 
     @error_handler
     def update_resource_control(self, endpoint_id: int, resource_control_id: int, resource_control: dict) -> dict:
@@ -425,6 +487,7 @@ class PortainerAPIConsumer:
             json=resource_control
         )
         r.raise_for_status()
+        logging.getLogger('stdout').info(r.json())
         logging.getLogger('stdout').info(f"Resource Control {resource_control_id} updated successfully")
         return generate_response('Resource Control updated successfully', status=True, code=r.status_code)
 
@@ -856,8 +919,8 @@ class PortainerDeployer:
                                                        secret_value=args.value, secret_length=args.length,
                                                        team=args.team)
             return response
-        elif args.network:
-            pass
+        elif args.category == 'volume':
+            return self.api_consumer.create_volume(endpoint_id=args.endpoint, name=args.name, team=args.team)
         else:
             return generate_response('Creation of resource failed: invalid arguments', status=False)
 
