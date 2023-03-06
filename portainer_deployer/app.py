@@ -11,6 +11,9 @@ from re import split as re_split
 from functools import wraps
 import argparse
 import sys
+import base64
+import secrets
+import string
 import requests
 class PortainerAPIConsumer:
     """Class to manage the Portainer API
@@ -132,6 +135,29 @@ class PortainerAPIConsumer:
                 print(spacing_str.format(*stack))
 
         return generate_response('Stack(s) pulled successfully', status=True, code=r.status_code)
+
+    @error_handler
+    def get_teams(self) -> list:
+        """Resolve team name to ID
+
+        Args:
+            name (str, optional): Name of the team in Portainer. Defaults to None.
+        Returns:
+            int: Team ID
+        """
+        teams = list()
+        r = requests.get(
+            f"{self.__portainer_connection_str}/api/teams",
+            headers=self.__connection_headers,
+            verify=self.use_ssl
+        )
+        r.raise_for_status()
+        if type(r.json()) is list:
+            logging.getLogger('stdout').info(f"Teams retrieved successfully")
+            logging.getLogger('stdout').info(r.json())
+            teams = r.json()
+
+        return list(teams)
 
     @error_handler
     def post_stack_from_str(self, stack: str, endpoint_id: int, name: str = None) -> dict:
@@ -297,6 +323,112 @@ class PortainerAPIConsumer:
         r.raise_for_status()
         logging.getLogger('stdout').info("Deleted successfully!!!")
         return generate_response('Stack(s) deleted successfully', status=True, code=r.status_code)
+
+    @error_handler
+    def create_secret(self, endpoint_id: int, secret_name: str, secret_value: str = None, secret_length: int = 20,
+        team: str = None) -> dict:
+        """Create a secret for a given endpoint id
+
+        Args:
+            endpoint_id (int): Id of the endpoint in Portainer.
+            secret_name (str): Name of the secret to create.
+            secret_value (str): Plaintext secret to encode and store, or None to generate random text.
+            secret_length (int): Length of secret
+            team (str): Team name to access, otherwise administrator
+        Returns:
+            dict: Dictionary with the status and detail of the operation.
+        """
+        if not endpoint_id:
+            raise Exception('Invalid endpoint ID', 'An endpoint ID (integer) is required')
+        if not secret_name:
+            raise Exception('Invalid secret name', 'A new secret name is required.')
+
+        # Generate a new secret if None is provided
+        if secret_value is None:
+            logging.getLogger('stdout').info('No secret given, generating!')
+            alphabet = string.digits \
+                       + string.ascii_lowercase \
+                       + string.ascii_uppercase
+            secret_value = ''
+            for i in range(secret_length):
+                # The secrets module allows for strong passwords
+                secret_value += ''.join(secrets.choice(alphabet))
+            logging.getLogger('stdout').info(secret_value)
+        # Secret data
+        json = {
+            "Name": secret_name,
+            "Data": base64.b64encode(secret_value.encode('ascii')).decode('ascii')
+        }
+        # Resource control data
+        team_id = None
+        if team:
+            teams = self.get_teams()
+            for team_entry in teams:
+                logging.getLogger('stdout').info(team)
+                if team == team_entry['Name']:
+                    team_id = team_entry['Id']
+
+            # Some validation
+            if type(team_id) is not int:
+                logging.getLogger('stdout').error(f"Team {team} not found, exiting")
+                exit(1)
+
+        default_resource_control = {
+            "administratorsOnly": False,
+            "public": False,
+            "teams": [
+                team_id
+            ],
+            "users": []
+        }
+
+        # Takes stack_name only if stack_id is not provided
+        r = requests.post(
+            f"{self.__portainer_connection_str}/api/endpoints/{endpoint_id}/docker/secrets/create",
+            headers=self.__connection_headers,
+            verify=self.use_ssl,
+            json=json
+        )
+        r.raise_for_status()
+        (resource_id, resource_control_id) = format_secret(r.json())
+        # Only update resource control if a team name was specified and we got a good team ID back
+        if team is not None and team_id is not None:
+            rcr = self.update_resource_control(endpoint_id, resource_control_id, default_resource_control)
+            print(rcr)
+            r.raise_for_status()
+        logging.getLogger('stdout').info("Created secret successfully")
+        return generate_response('Created secret successfully', status=True, code=r.status_code)
+
+    @error_handler
+    def update_resource_control(self, endpoint_id: int, resource_control_id: int, resource_control: dict) -> dict:
+        """Update resource control (access) in portainer for a given resource
+
+        Args:
+            endpoint_id (int): Id of the endpoint in Portainer.
+            secret_name (str): Name of the secret to create.
+            secret_value (str): Plaintext secret to encode and store, or None to generate random text.
+
+        Returns:
+            dict: Dictionary with the status and detail of the operation.
+        """
+        logging.getLogger('stdout').info("Resource control to be updated")
+        if not endpoint_id:
+            raise Exception('Invalid endpoint ID', 'An endpoint ID (integer) is required')
+        if not resource_control_id:
+            raise Exception('Invalid resource control ID', 'A valid resource control ID (integer) is required.')
+
+        # PUT update
+        r = requests.put(
+            f"{self.__portainer_connection_str}/api/resource_controls/{resource_control_id}",
+            headers=self.__connection_headers,
+            verify=self.use_ssl,
+            json=resource_control
+        )
+        r.raise_for_status()
+        logging.getLogger('stdout').info(f"Resource Control {resource_control_id} updated successfully")
+        return generate_response('Resource Control updated successfully', status=True, code=r.status_code)
+
+
 
 class PortainerDeployer:
     """Manage Portainer's Stacks usgin its API throught Command Line.
@@ -509,6 +641,32 @@ class PortainerDeployer:
         parser_remove.set_defaults(func=self._remove_sub_command)
 
 
+        parser_create = subparsers.add_parser('create', description='Create a new resource', add_help=False)
+        parser_create.add_argument('-h', '--help', action='help', default=argparse.SUPPRESS,
+            help=DEFAULT_HELP_MESSAGE)
+        parser_create.add_argument('category', action='store', help="Category of new resource to create, eg. secret, volume, network")
+        parser_create.add_argument('--name', '-n', action='store', help="Name of new resource to create", type=str)
+        parser_create.add_argument('--length', '-l', action='store', help="Length of new resource value, if applicable"
+                                                                          " (eg. secret length)", type=int)
+        parser_create.add_argument('--value', '-v', action='store',
+                                   help="String value of new resource, if applicable (eg. secret)", type=str)
+        parser_create.add_argument('--team', '-t', action='store',
+                                   help="Team that can access new resource, if applicable (eg. secret),"
+                                        " otherwise administrative", type=str)
+        parser_create.add_argument('-y',
+            action='store_true',
+            help='Accept redeploy and do not ask for confirmation before redeploying the stack.',
+        )
+
+        parser_create.add_argument('--endpoint',
+            '-e',
+            required=True if len(sys.argv) > 2 else False,
+            action='store',
+            type=int,
+            help='Endpoint Id to deploy the stack.'
+        )
+        parser_create.set_defaults(func=self._create_sub_command)
+
         # ========================== Sub-command config ==========================
         parser_config = subparsers.add_parser(
             'config', 
@@ -689,7 +847,19 @@ class PortainerDeployer:
         else:
             return generate_response('Stack removal cancelled', status=False)
 
+    @use_api
+    def _create_sub_command(self, args: argparse.Namespace) -> dict:
+        category = None
 
+        if args.category == 'secret':
+            response = self.api_consumer.create_secret(endpoint_id=args.endpoint, secret_name=args.name,
+                                                       secret_value=args.value, secret_length=args.length,
+                                                       team=args.team)
+            return response
+        elif args.network:
+            pass
+        else:
+            return generate_response('Creation of resource failed: invalid arguments', status=False)
 
 def main():
     """Main function."""

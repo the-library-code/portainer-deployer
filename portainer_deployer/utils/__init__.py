@@ -1,5 +1,6 @@
 from .utils import \
     edit_yml_file, \
+    format_secret, \
     format_stack_info, \
     format_stack_info_generator, \
     generate_random_hash, \
@@ -15,7 +16,8 @@ from .utils import \
     request_confirmation
 
 __all__ = [
-        'edit_yml_file', 
+        'edit_yml_file',
+        'format_secret',
         'format_stack_info', 
         'format_stack_info_generator', 
         'generate_random_hash', 

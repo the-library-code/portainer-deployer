@@ -7,6 +7,39 @@ from os import path, access, W_OK, R_OK
 import logging
 
 
+def format_secret(secret: dict):
+    """
+    Return a simple tuple with secret and resource control ID, from the example response dict:
+    {
+    "ID": "z97bz5hrdk0ex7j44gcxzrvyj",
+    "Portainer": {
+        "ResourceControl": {
+            "Id": 15,
+            "ResourceId": "z97bz5hrdk0ex7j44gcxzrvyj",
+            "SubResourceIds": [],
+            "Type": 5,
+            "UserAccesses": [
+                {
+                    "UserId": 2,
+                    "AccessLevel": 1
+                }
+            ],
+            "TeamAccesses": [],
+            "Public": false,
+            "AdministratorsOnly": false,
+            "System": false
+        }
+    }
+}
+    :param secret:
+    :return:
+    """
+    if len(secret) == 0:
+        return ()
+    secret_info = (secret['ID'], secret['Portainer']['ResourceControl']['Id'])
+    return secret_info
+
+
 def format_stack_info_generator(stacks: list):
     """Format the list of stacks from Portainer and return a generator with it.
 
