@@ -40,6 +40,8 @@ def format_resource(resource: dict):
     if 'Portainer' in resource and 'ResourceControl' in resource['Portainer']:
         if 'ID' in resource:
             name = resource['ID']
+        elif 'Id' in resource:
+            name = resource['Id']
         elif 'Name' in resource:
             name = resource['Name']
         else:
