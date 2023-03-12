@@ -24,6 +24,17 @@ class PortainerAPIConsumer:
     """Class to manage the Portainer API
     """
 
+    def get_stack_type(self, stack_type) -> int:
+        stack_types = {
+            'swarm': 1,
+            'compose': 2,
+            'kubernetes': 3,
+        }
+        if stack_type in stack_types:
+            return stack_types[stack_type]
+        # Return swarm by default
+        return 1
+
     def __init__(self, api_config_path: str) -> None:
         PATH_TO_CONFIG = api_config_path
 
@@ -39,6 +50,10 @@ class PortainerAPIConsumer:
         # Set portainer connection parameters
         self.__portainer_connection_str = self._portainer_config.url
         self.__connection_headers = {'X-API-Key': self._portainer_config.token}
+
+        # Set some stack environment config
+        self.stack_type = self.get_stack_type(self._portainer_config.get_var('STACK_TYPE'))
+
 
     def error_handler(method):
         """Decorator to use static error handler.
@@ -220,7 +235,7 @@ class PortainerAPIConsumer:
         return generate_response('Stack(s) pushed successfully', status=True, code=r.status_code)
 
     @error_handler
-    def post_stack_from_file(self, path: str, endpoint_id: int, name: str = None) -> dict:
+    def post_stack_from_file(self, path: str, endpoint_id: int, name: str = None, swarm: bool = False) -> dict:
         """Post a stack from a file.
 
         Args:
@@ -236,19 +251,23 @@ class PortainerAPIConsumer:
         if not validate_yaml(path=path):
             raise Exception('Invalid stack', 'Stack is not in a valid yaml format.')
 
-        # TODO MOVE THIS
-        swarm_id = self.get_swarm_id_for_endpoint(endpoint_id=endpoint_id)
+        data = {"Name": name}
+
+        # If we're in swarm mode, get the swarm ID
+        if self.stack_type == self.get_stack_type('swarm'):
+            swarm_id = self.get_swarm_id_for_endpoint(endpoint_id=endpoint_id)
+            data['SwarmID'] = swarm_id
 
         # Open file
         with open(path, 'r') as f:
             params = {
-                "type": 1,
+                "type": self.stack_type,
                 "endpointId": endpoint_id,
                 "method": "file"
             }
 
             response = requests.post(self.__portainer_connection_str + '/api/stacks',
-                                     data={"Name": name, "SwarmID": swarm_id},
+                                     data=data,
                                      params=params,
                                      files={'file': f},
                                      headers=self.__connection_headers,
@@ -931,6 +950,9 @@ class PortainerDeployer:
                                    help='Accept redeploy and do not ask for confirmation before redeploying the stack.',
                                    )
 
+        parser_deploy.add_argument('--swarm', action='store_true', help='Deploy this stack in Swarm mode. The Swarm ID'
+                                                                        ' will be retrieved for inclusion in POST data '
+                                                                        'before performing (re)deploy.')
         parser_deploy.add_argument('--endpoint',
                                    '-e',
                                    required=True if len(sys.argv) > 2 else False,

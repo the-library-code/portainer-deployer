@@ -3,3 +3,4 @@ url=
 username=
 token=
 verify_ssl=yes
+stack_type=swarm
