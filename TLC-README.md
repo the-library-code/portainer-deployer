@@ -20,7 +20,8 @@ environments and for CI/CD to redeploy stacks as needed
    1. URL for Zenit should be `https://maintenance.the-library-cloud.de`
    2. See the central password DB for `TLC Zenit API Token` to set the username and token secret
 4. Install the Python module. Use virtual environment if desired. Install with `python setup.py install`
-5. Set the configuration path to your custom config
+5. Install requirements using e.g. `pip wheel -r requirements.txt`
+6. Set the configuration path to your custom config
    1. For example: `portainer-deployer config --config-path /home/developer/deployer.conf`
 
 ## Create resources
