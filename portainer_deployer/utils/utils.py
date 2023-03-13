@@ -175,11 +175,11 @@ def validate_key_value(pair: str) -> bool:
         bool: True if the pair is valid, False otherwise.
     """    
     # Attempts to validate normal key=value format
-    if match(r'^[a-zA-Z0-9_\.]+=[^\[\]]+$', pair):
+    if match(r'^[a-zA-Z0-9-_\.]+=[^\[\]]+$', pair):
         return True
 
     # Attempts to validate list of values format
-    elif match(r'^[a-zA-Z0-9_\.]+=\[[^\]]*]+$', pair):
+    elif match(r'^[a-zA-Z0-9-_\.]+=\[[^\]]*]+$', pair):
         return True
 
     return False

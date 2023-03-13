@@ -235,13 +235,14 @@ class PortainerAPIConsumer:
         return generate_response('Stack(s) pushed successfully', status=True, code=r.status_code)
 
     @error_handler
-    def post_stack_from_file(self, path: str, endpoint_id: int, name: str = None, swarm: bool = False) -> dict:
+    def post_stack_from_file(self, path: str, endpoint_id: int, name: str = None, swarm: bool = False, team: str = None) -> dict:
         """Post a stack from a file.
 
         Args:
             path (str): Path to the file.
             endpoint_id (int): Id of the endpoint in Portainer.
             name (str): Name of the stack in Portainer.
+            team (str): Name of team to own this resource
 
         Returns:
             dict: Dictionary with the status and detail of the operation.
@@ -274,6 +275,9 @@ class PortainerAPIConsumer:
                                      verify=self.use_ssl
                                      )
             response.raise_for_status()
+            resource_id = response.json()['ResourceControl']['Id']
+            rcr = self.update_resource_control(endpoint_id, resource_id, team)
+            print(rcr)
 
             logging.getLogger('stdout').info(f"Stack {name} created successfully!!!")
             return generate_response(f'Stack {name} from {path} posted successfully under the endpoint {endpoint_id}.',
@@ -457,28 +461,6 @@ class PortainerAPIConsumer:
             "Name": secret_name,
             "Data": base64.b64encode(secret_value.encode('ascii')).decode('ascii')
         }
-        # Resource control data
-        team_id = None
-        if team:
-            teams = self.get_teams()
-            for team_entry in teams:
-                logging.getLogger('stdout').info(team)
-                if team == team_entry['Name']:
-                    team_id = team_entry['Id']
-
-            # Some validation
-            if type(team_id) is not int:
-                logging.getLogger('stdout').error(f"Team {team} not found, exiting")
-                exit(1)
-
-        default_resource_control = {
-            "administratorsOnly": False,
-            "public": False,
-            "teams": [
-                team_id
-            ],
-            "users": []
-        }
 
         # Takes stack_name only if stack_id is not provided
         r = requests.post(
@@ -490,10 +472,9 @@ class PortainerAPIConsumer:
         r.raise_for_status()
         (resource_id, resource_control_id) = format_resource(r.json())
         # Only update resource control if a team name was specified and we got a good team ID back
-        if team is not None and team_id is not None:
-            rcr = self.update_resource_control(endpoint_id, resource_control_id, default_resource_control)
-            print(rcr)
-            r.raise_for_status()
+        if team is not None:
+            rcr = self.update_resource_control(endpoint_id, resource_control_id, team)
+
         logging.getLogger('stdout').info("Created secret successfully")
         return generate_response('Created secret successfully', status=True, code=r.status_code)
 
@@ -559,38 +540,9 @@ class PortainerAPIConsumer:
         if not name:
             raise Exception('Invalid volume name', 'A new volume name is required.')
 
-        # Resource control data
-        team_id = None
-        if team:
-            teams = self.get_teams()
-            for team_entry in teams:
-                # logging.getLogger('stdout').info(team)
-                if team == team_entry['Name']:
-                    team_id = team_entry['Id']
-
-            # Some validation
-            if type(team_id) is not int:
-                logging.getLogger('stdout').error(f"Team {team} not found, exiting")
-                exit(1)
-
-        default_resource_control = {
-            "administratorsOnly": False,
-            "public": False,
-            "teams": [
-                team_id
-            ],
-            "users": []
-        }
-
-        # Volume data
-        json = {
-            "Name": name
-        }
-        (resource_id, resource_control_id) = None, None
-
         # First, check for an existing volume of this name
         url = f"{self.__portainer_connection_str}/api/endpoints/{endpoint_id}/docker/volumes/{name.strip()}"
-        print(url)
+        # print(url)
         r = requests.get(
             f"{self.__portainer_connection_str}/api/endpoints/{endpoint_id}/docker/volumes/{name.strip()}",
             headers=self.__connection_headers,
@@ -599,9 +551,9 @@ class PortainerAPIConsumer:
         if r.status_code == 200:
             # Already a volume of this name, we should skip creation and just update the resource policy
             # Only update resource control if a team name was specified and we got a good team ID back
-            if team is not None and team_id is not None:
+            if team is not None:
                 (resource_id, resource_control_id) = format_resource(r.json())
-                rcr = self.update_resource_control(endpoint_id, resource_control_id, default_resource_control)
+                rcr = self.update_resource_control(endpoint_id, resource_control_id, team)
             msg = f'Skipping this volume, it already exists: {name}'
             logging.getLogger('stdout').info(msg)
             return generate_response(msg, status=True, code=r.status_code)
@@ -613,6 +565,7 @@ class PortainerAPIConsumer:
             logging.getLogger('stdout').error(r.status_code)
             return generate_response(f'Error encountered creating volume: {name}', status=False, code=r.status_code)
 
+        json = {'Name': name}
         # Takes stack_name only if stack_id is not provided
         r = requests.post(
             f"{self.__portainer_connection_str}/api/endpoints/{endpoint_id}/docker/volumes/create",
@@ -620,13 +573,14 @@ class PortainerAPIConsumer:
             verify=self.use_ssl,
             json=json
         )
+
         logging.getLogger('stdout').info(r.json())
         r.raise_for_status()
         (resource_id, resource_control_id) = format_resource(r.json())
         logging.getLogger('stdout').info(resource_id)
         # Only update resource control if a team name was specified and we got a good team ID back
-        if team is not None and team_id is not None:
-            rcr = self.update_resource_control(endpoint_id, resource_control_id, default_resource_control)
+        if team is not None:
+            rcr = self.update_resource_control(endpoint_id, resource_control_id, team)
 
         logging.getLogger('stdout').info("Created volume successfully")
         return generate_response('Created volume successfully', status=True, code=r.status_code)
@@ -636,7 +590,7 @@ class PortainerAPIConsumer:
                         team: str = None,
                         path: str = None,
                         dedup: bool = True,
-                        driver: str = "local",
+                        driver: str = "overlay",
                         internal: bool = True,
                         attachable: bool = True,
                         ) -> dict:
@@ -720,28 +674,6 @@ class PortainerAPIConsumer:
             "Internal": internal,
             "Attachable": attachable
         }
-        # Resource control data
-        team_id = None
-        if team:
-            teams = self.get_teams()
-            for team_entry in teams:
-                logging.getLogger('stdout').info(team)
-                if team == team_entry['Name']:
-                    team_id = team_entry['Id']
-
-            # Some validation
-            if type(team_id) is not int:
-                logging.getLogger('stdout').error(f"Team {team} not found, exiting")
-                exit(1)
-
-        default_resource_control = {
-            "administratorsOnly": False,
-            "public": False,
-            "teams": [
-                team_id
-            ],
-            "users": []
-        }
 
         (resource_id, resource_control_id) = None, None
 
@@ -757,14 +689,14 @@ class PortainerAPIConsumer:
         (resource_id, resource_control_id) = format_resource(r.json())
         logging.getLogger('stdout').info(resource_id)
         # Only update resource control if a team name was specified and we got a good team ID back
-        if team is not None and team_id is not None:
-            rcr = self.update_resource_control(endpoint_id, resource_control_id, default_resource_control)
+        if team is not None:
+            rcr = self.update_resource_control(endpoint_id, resource_control_id, team)
 
         logging.getLogger('stdout').info("Created network successfully")
         return generate_response('Created network successfully', status=True, code=r.status_code)
 
     @error_handler
-    def update_resource_control(self, endpoint_id: int, resource_control_id: int, resource_control: dict) -> dict:
+    def update_resource_control(self, endpoint_id: int, resource_control_id: int, team: str) -> dict:
         """Update resource control (access) in portainer for a given resource
 
         Args:
@@ -775,6 +707,28 @@ class PortainerAPIConsumer:
         Returns:
             dict: Dictionary with the status and detail of the operation.
         """
+        # Resource control data
+        team_id = None
+        if team:
+            teams = self.get_teams()
+            for team_entry in teams:
+                logging.getLogger('stdout').info(team)
+                if team == team_entry['Name']:
+                    team_id = team_entry['Id']
+
+            # Some validation
+            if type(team_id) is not int:
+                generate_response(f"Team {team} not found", status=False, code=1)
+
+        resource_control = {
+            "administratorsOnly": False,
+            "public": False,
+            "teams": [
+                team_id
+            ],
+            "users": []
+        }
+
         logging.getLogger('stdout').info("Resource control to be updated")
         if not endpoint_id:
             raise Exception('Invalid endpoint ID', 'An endpoint ID (integer) is required')
@@ -950,9 +904,6 @@ class PortainerDeployer:
                                    help='Accept redeploy and do not ask for confirmation before redeploying the stack.',
                                    )
 
-        parser_deploy.add_argument('--swarm', action='store_true', help='Deploy this stack in Swarm mode. The Swarm ID'
-                                                                        ' will be retrieved for inclusion in POST data '
-                                                                        'before performing (re)deploy.')
         parser_deploy.add_argument('--endpoint',
                                    '-e',
                                    required=True if len(sys.argv) > 2 else False,
@@ -960,6 +911,10 @@ class PortainerDeployer:
                                    type=int,
                                    help='Endpoint Id to deploy the stack.'
                                    )
+
+        parser_deploy.add_argument('--team', '-t', action='store',
+                                   help="Team that can access new resource, if applicable (eg. secret),"
+                                        " otherwise administrative", type=str)
 
         parser_deploy.set_defaults(func=self._deploy_sub_command)
 
@@ -1045,10 +1000,10 @@ class PortainerDeployer:
                                    help="Team that can access new resource, if applicable (eg. secret),"
                                         " otherwise administrative", type=str)
         parser_create.add_argument('--dedup', action='store', type=bool, default=True,
-                                   help="Driver to use, eg, overlay or bridge")
+                                   help="Skip creation if existing networks exist. Default: True")
         parser_create.add_argument('--driver', '-d', action='store',
-                                   help="Driver to use, eg, overlay or bridge",
-                                   type=str, default='bridge')
+                                   help="Driver to use, eg, overlay or bridge. Default: True",
+                                   type=str, default='overlay')
         parser_create.add_argument('--internal', action='store_true',
                                    help="Internal only")
         parser_create.add_argument('--attachable', action='store', type=bool, default=True,
@@ -1285,7 +1240,8 @@ class PortainerDeployer:
                 else:
                     return generate_response(f'Invalid key=value pair in --update-keys argument: {pair}')
 
-            response = self.api_consumer.post_stack_from_file(path=args.path, name=args.name, endpoint_id=args.endpoint)
+            response = self.api_consumer.post_stack_from_file(path=args.path, name=args.name, endpoint_id=args.endpoint,
+                                                              team=args.team)
 
         else:
             response = generate_response('No stack argument specified',
