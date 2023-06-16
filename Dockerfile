@@ -24,4 +24,4 @@ RUN python -m pip install --upgrade pip && \
     portainer-deployer config --config-path ${PORTAINER_DEPLOYER_CONF_DIR}/${PORTAINER_DEPLOYER_CONF_FILE}
 
 # Run application
-ENTRYPOINT [ "portainer-deployer" ]
+ENTRYPOINT [ "/bin/sh" ]
