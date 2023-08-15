@@ -2,6 +2,6 @@
     "info": {
         "prog": "portainer-deployer"
     },
-    "version": "0.0.7tlc",
+    "version": "0.0.7+tlc",
     "phase": "Alpha-TLC"
 }
