@@ -25,6 +25,11 @@ environments and for CI/CD to redeploy stacks as needed
 6. Set the configuration path to your custom config
    1. For example: `portainer-deployer config --config-path /home/developer/deployer.conf`
 
+In Gitlab CI/CD we use variables for the configuration of the deployer. In the container there is a script
+`entrypoint.sh` that uses sed to push the values from the enviroment variables `PORTAINER_URL`, `PORTAINER_USER`,
+and `PORTAINER_TOKEN` into the configuration file. Other environment variables are used by CI/CD to build the deploy
+command.
+
 ## Create resources
 
 If this is a new environment or customer, some networks, volumes and secrets will need to be created before the full 
