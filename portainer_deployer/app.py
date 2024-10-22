@@ -455,7 +455,7 @@ class PortainerAPIConsumer:
                 # The secrets module allows for strong passwords
                 secret_value += ''.join(secrets.choice(alphabet))
             # Uncomment this if you want to snoop at the secret on its way in
-            # logging.getLogger('stdout').debug(secret_value)
+                logging.getLogger('stdout').debug(secret_value)
         # Secret data
         json = {
             "Name": secret_name,

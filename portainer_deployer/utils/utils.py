@@ -328,6 +328,7 @@ class StdoutFormatter(CustomFormatter):
 
         return FORMATS
 
+
 class FormatterDispatcher:
     def __init__(self, formatters: dict):
         self._formatters = formatters
@@ -335,6 +336,7 @@ class FormatterDispatcher:
     def format(self, record) -> logging.Formatter:
         formatter = self._formatters.get(record.name)
         return formatter.format(record)
+
 
 custom_handler = logging.StreamHandler()
 

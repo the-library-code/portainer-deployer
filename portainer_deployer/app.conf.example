@@ -1,6 +1,6 @@
 [PORTAINER]
-url=
-username=
-token=
+url="url"
+username="user"
+token="token"
 verify_ssl=yes
 stack_type=swarm
